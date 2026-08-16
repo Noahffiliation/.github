@@ -1,0 +1,85 @@
+name: "Reusable Android CI/CD"
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: "JDK version"
+        required: false
+        default: "21"
+        type: string
+    secrets:
+      SONAR_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  android-ci:
+    name: Android Build, Lint & Test
+    runs-on: ubuntu-24.04
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4.7.0
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4.3.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Cache Sonar
+        if: env.SONAR_TOKEN != ''
+        uses: actions/cache@v4.2.2
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Run Spotless Formatter Check
+        run: ./gradlew spotlessCheck || true
+
+      - name: Run Android Lint
+        run: ./gradlew lintDebug
+
+      - name: Upload Lint SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3.28.11
+        continue-on-error: true
+        with:
+          sarif_file: app/build/reports/lint-results-debug.sarif
+          category: android-lint
+
+      - name: Run Unit Tests & JaCoCo Coverage
+        run: ./gradlew testDebugUnitTest jacocoTestReport
+
+      - name: SonarCloud Analysis
+        if: env.SONAR_TOKEN != ''
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew sonar --info
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30

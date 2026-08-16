@@ -1,0 +1,133 @@
+name: "Reusable Python CI/CD"
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version to use"
+        required: false
+        default: "3.12.3"
+        type: string
+      test-docker:
+        description: "Whether to validate Dockerfile build"
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      SONAR_TOKEN:
+        required: false
+      DISCORD_WEBHOOK:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint & Format Check (Python)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Python (with pip cache)
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: "pip"
+          cache-dependency-path: "**/requirements*.txt"
+
+      - name: Cache Ruff & Mypy
+        uses: actions/cache@v4.2.2
+        with:
+          path: |
+            .mypy_cache
+            .ruff_cache
+          key: ${{ runner.os }}-python-lint-${{ hashFiles('**/*.py') }}
+          restore-keys: |
+            ${{ runner.os }}-python-lint-
+
+      - name: Install Linting & Typing Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Ruff Lint
+        run: ruff check .
+
+      - name: Check Formatting (Ruff)
+        run: ruff format --check .
+
+      - name: Type Check (mypy)
+        run: mypy . || true
+
+  test:
+    name: Test & Coverage (Python)
+    runs-on: ubuntu-24.04
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Python (with pip cache)
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: "pip"
+          cache-dependency-path: "**/requirements*.txt"
+
+      - name: Cache Pytest & Sonar
+        uses: actions/cache@v4.2.2
+        with:
+          path: |
+            .pytest_cache
+            ~/.sonar/cache
+          key: ${{ runner.os }}-pytest-sonar-${{ hashFiles('**/*.py') }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-sonar-
+
+      - name: Install Test Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov pytest-asyncio
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Pytest with Coverage
+        run: pytest --cov=. --cov-report=xml --cov-report=term
+
+      - name: SonarQube / SonarCloud Scan
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Coverage Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: python-coverage-report
+          path: coverage.xml
+          retention-days: 30
+
+  docker-build:
+    name: Validate Docker Build
+    if: inputs.test-docker
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.10.0
+
+      - name: Test Docker Container Build
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: .
+          push: false
+          tags: app:test-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
