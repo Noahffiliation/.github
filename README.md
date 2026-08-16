@@ -8,9 +8,9 @@ This repository contains reusable GitHub Actions workflows (`workflow_call`) use
 
 | Workflow | Description | Path |
 | :--- | :--- | :--- |
-| **Node.js CI/CD** | Lint (Prettier/ESLint), TypeScript, Tests + Coverage, SonarCloud, Next.js Caching, Bundle Build | [`.github/workflows/reusable-node-ci.yml`](.github/workflows/reusable-node-ci.yml) |
-| **Python CI/CD** | Ruff (lint & format), Mypy, Pytest + Coverage, SonarCloud, Docker build validation | [`.github/workflows/reusable-python-ci.yml`](.github/workflows/reusable-python-ci.yml) |
-| **Android CI/CD** | JDK 21, Spotless, Android Lint (SARIF), JUnit + JaCoCo, SonarCloud, Debug APK | [`.github/workflows/reusable-android-ci.yml`](.github/workflows/reusable-android-ci.yml) |
+| **Node.js CI/CD** | Lint (Prettier/ESLint), TypeScript, Tests + Coverage, SonarCloud, Next.js Caching, Bundle Build, Dependency Review, Docker Security & SBOM | [`.github/workflows/reusable-node-ci.yml`](.github/workflows/reusable-node-ci.yml) |
+| **Python CI/CD** | Ruff (lint & format), Mypy, Pytest + Coverage, SonarCloud, Dependency Review, Docker Build & Trivy/ClamAV/SBOM | [`.github/workflows/reusable-python-ci.yml`](.github/workflows/reusable-python-ci.yml) |
+| **Android CI/CD** | JDK 21, Spotless, Android Lint (SARIF), JUnit + JaCoCo, SonarCloud, Debug APK, Dependency Review | [`.github/workflows/reusable-android-ci.yml`](.github/workflows/reusable-android-ci.yml) |
 | **CodeQL SAST** | CodeQL Security Analysis uploading SARIF to GitHub Security tab | [`.github/workflows/reusable-codeql.yml`](.github/workflows/reusable-codeql.yml) |
 
 ---
@@ -94,7 +94,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '17 3 * * 1'
+    - cron: '17 3 * * *' # Daily at 03:17 UTC
 
 jobs:
   security-scan:

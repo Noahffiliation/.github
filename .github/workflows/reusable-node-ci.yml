@@ -18,6 +18,11 @@ on:
         required: false
         default: "dist"
         type: string
+      test-docker:
+        description: "Whether to validate Dockerfile build, scan for vulnerabilities/malware, and generate SBOM"
+        required: false
+        default: false
+        type: boolean
     secrets:
       SONAR_TOKEN:
         required: false
@@ -25,9 +30,33 @@ on:
         required: false
       DISCORD_WEBHOOK:
         required: false
+      # Repository secrets inherited via `secrets: inherit`
+      LASTFM_API_KEY:
+        required: false
+      NEXT_PUBLIC_LASTFM_API_KEY:
+        required: false
+      TRAKT_API_KEY:
+        required: false
+      NEXT_PUBLIC_TRAKT_API_KEY:
+        required: false
+      NOTION_KEY:
+        required: false
+      NOTION_TOKEN:
+        required: false
+      NOTION_DATABASE_ID:
+        required: false
+      MONGODB_URI:
+        required: false
+      CLOUDINARY_NAME:
+        required: false
+      CLOUDINARY_KEY:
+        required: false
+      CLOUDINARY_SECRET:
+        required: false
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   lint:
@@ -60,6 +89,22 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      # Injected directly from calling repository's GitHub Secrets and Variables
+      LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+      NEXT_PUBLIC_LASTFM_API_KEY: ${{ secrets.NEXT_PUBLIC_LASTFM_API_KEY || vars.NEXT_PUBLIC_LASTFM_API_KEY }}
+      NEXT_PUBLIC_LASTFM_USERNAME: ${{ vars.NEXT_PUBLIC_LASTFM_USERNAME || secrets.NEXT_PUBLIC_LASTFM_USERNAME }}
+      NEXT_PUBLIC_BACKLOGGD_USERNAME: ${{ vars.NEXT_PUBLIC_BACKLOGGD_USERNAME || secrets.NEXT_PUBLIC_BACKLOGGD_USERNAME }}
+      NEXT_PUBLIC_MAL_USERNAME: ${{ vars.NEXT_PUBLIC_MAL_USERNAME || secrets.NEXT_PUBLIC_MAL_USERNAME }}
+      NEXT_PUBLIC_MDL_USERNAME: ${{ vars.NEXT_PUBLIC_MDL_USERNAME || secrets.NEXT_PUBLIC_MDL_USERNAME }}
+      NEXT_PUBLIC_TRAKT_API_KEY: ${{ secrets.NEXT_PUBLIC_TRAKT_API_KEY || secrets.TRAKT_API_KEY }}
+      NEXT_PUBLIC_TRAKT_USERNAME: ${{ vars.NEXT_PUBLIC_TRAKT_USERNAME || secrets.NEXT_PUBLIC_TRAKT_USERNAME }}
+      TRAKT_API_KEY: ${{ secrets.TRAKT_API_KEY }}
+      NOTION_KEY: ${{ secrets.NOTION_KEY || secrets.NOTION_TOKEN }}
+      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID || vars.NOTION_DATABASE_ID }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      CLOUDINARY_NAME: ${{ secrets.CLOUDINARY_NAME }}
+      CLOUDINARY_KEY: ${{ secrets.CLOUDINARY_KEY }}
+      CLOUDINARY_SECRET: ${{ secrets.CLOUDINARY_SECRET }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -99,10 +144,37 @@ jobs:
           path: coverage/
           retention-days: 30
 
+  dependency-review:
+    name: Dependency Vulnerability Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Run Dependency Review
+        uses: actions/dependency-review-action@v4.5.0
+        continue-on-error: true
+
   build:
     name: Build & Package
     if: inputs.run-build
     runs-on: ubuntu-24.04
+    env:
+      # Injected directly from calling repository's GitHub Secrets and Variables
+      LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+      NEXT_PUBLIC_LASTFM_API_KEY: ${{ secrets.NEXT_PUBLIC_LASTFM_API_KEY || vars.NEXT_PUBLIC_LASTFM_API_KEY }}
+      NEXT_PUBLIC_LASTFM_USERNAME: ${{ vars.NEXT_PUBLIC_LASTFM_USERNAME || secrets.NEXT_PUBLIC_LASTFM_USERNAME }}
+      NEXT_PUBLIC_BACKLOGGD_USERNAME: ${{ vars.NEXT_PUBLIC_BACKLOGGD_USERNAME || secrets.NEXT_PUBLIC_BACKLOGGD_USERNAME }}
+      NEXT_PUBLIC_MAL_USERNAME: ${{ vars.NEXT_PUBLIC_MAL_USERNAME || secrets.NEXT_PUBLIC_MAL_USERNAME }}
+      NEXT_PUBLIC_MDL_USERNAME: ${{ vars.NEXT_PUBLIC_MDL_USERNAME || secrets.NEXT_PUBLIC_MDL_USERNAME }}
+      NEXT_PUBLIC_TRAKT_API_KEY: ${{ secrets.NEXT_PUBLIC_TRAKT_API_KEY || secrets.TRAKT_API_KEY }}
+      NEXT_PUBLIC_TRAKT_USERNAME: ${{ vars.NEXT_PUBLIC_TRAKT_USERNAME || secrets.NEXT_PUBLIC_TRAKT_USERNAME }}
+      TRAKT_API_KEY: ${{ secrets.TRAKT_API_KEY }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      CLOUDINARY_NAME: ${{ secrets.CLOUDINARY_NAME }}
+      CLOUDINARY_KEY: ${{ secrets.CLOUDINARY_KEY }}
+      CLOUDINARY_SECRET: ${{ secrets.CLOUDINARY_SECRET }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -133,4 +205,67 @@ jobs:
         with:
           name: build-artifact
           path: ${{ inputs.build-output-dir }}
+          retention-days: 30
+
+  docker-build:
+    name: Build Container, Security/Antivirus Scan & SBOM
+    if: inputs.test-docker
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.10.0
+
+      - name: Build Docker Container (Local Daemon)
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: .
+          load: true
+          tags: app:test-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 1. Trivy Vulnerability & Security Scanner
+      - name: Run Trivy Security Vulnerability Scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: app:test-${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Container Security SARIF to GitHub Security Tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3.28.11
+        continue-on-error: true
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'container-security'
+
+      # 2. Antivirus / Malware Scan (ClamAV)
+      - name: Antivirus & Malware Scan (ClamAV)
+        run: |
+          sudo apt-get update && sudo apt-get install -y clamav
+          sudo freshclam || true
+          docker save app:test-${{ github.sha }} -o container-image.tar
+          clamscan --infected --recursive container-image.tar
+
+      # 3. Generate Software Bill of Materials (SBOM) via Syft
+      - name: Generate SBOM (SPDX JSON format)
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          image: app:test-${{ github.sha }}
+          format: 'spdx-json'
+          output-file: 'container-sbom.spdx.json'
+
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: container-sbom
+          path: container-sbom.spdx.json
           retention-days: 30
