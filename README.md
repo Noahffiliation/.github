@@ -28,6 +28,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   node-ci:
     uses: Noahffiliation/.github/.github/workflows/reusable-node-ci.yml@main
@@ -51,6 +55,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   python-ci:
     uses: Noahffiliation/.github/.github/workflows/reusable-python-ci.yml@main
@@ -73,6 +81,10 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   android-ci:
     uses: Noahffiliation/.github/.github/workflows/reusable-android-ci.yml@main
@@ -86,7 +98,7 @@ jobs:
 ### 4. CodeQL Security Analysis
 Create `.github/workflows/codeql.yml`:
 ```yaml
-name: "CodeQL Security"
+name: "CodeQL Advanced"
 
 on:
   push:
@@ -95,6 +107,10 @@ on:
     branches: [main]
   schedule:
     - cron: '17 3 * * *' # Daily at 03:17 UTC
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
   security-scan:
