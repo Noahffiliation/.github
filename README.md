@@ -35,6 +35,10 @@ permissions:
 
 jobs:
   node-ci:
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-node-ci.yml@main
     with:
       node-version: "24.19.0"
@@ -64,6 +68,10 @@ permissions:
 
 jobs:
   python-ci:
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-python-ci.yml@main
     with:
       python-version: "3.12.3"
@@ -91,6 +99,10 @@ permissions:
 
 jobs:
   android-ci:
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-android-ci.yml@main
     with:
       java-version: "21"
@@ -118,6 +130,9 @@ permissions:
 
 jobs:
   security-scan:
+    permissions:
+      contents: read
+      security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@main
     with:
       language: "python" # Or 'javascript-typescript', 'java-kotlin'
