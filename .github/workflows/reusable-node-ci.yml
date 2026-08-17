@@ -25,12 +25,8 @@ on:
         type: boolean
     secrets:
       SONAR_TOKEN:
+        description: "SonarCloud API token"
         required: false
-      VERCEL_TOKEN:
-        required: false
-      DISCORD_WEBHOOK:
-        required: false
-      # Repository secrets inherited via `secrets: inherit`
       LASTFM_API_KEY:
         required: false
       NEXT_PUBLIC_LASTFM_API_KEY:
@@ -38,12 +34,6 @@ on:
       TRAKT_API_KEY:
         required: false
       NEXT_PUBLIC_TRAKT_API_KEY:
-        required: false
-      NOTION_KEY:
-        required: false
-      NOTION_TOKEN:
-        required: false
-      NOTION_DATABASE_ID:
         required: false
       MONGODB_URI:
         required: false

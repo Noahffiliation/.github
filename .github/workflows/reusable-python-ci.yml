@@ -15,45 +15,7 @@ on:
         type: boolean
     secrets:
       SONAR_TOKEN:
-        required: false
-      DISCORD_WEBHOOK:
-        required: false
-      # Repository secrets inherited via `secrets: inherit`
-      DISCORD_TOKEN:
-        required: false
-      NOTION_TOKEN:
-        required: false
-      NOTION_PAGE_ID:
-        required: false
-      TRAKT_ACCESS_TOKEN:
-        required: false
-      TRAKT_CLIENT_ID:
-        required: false
-      TRAKT_CLIENT_SECRET:
-        required: false
-      TRAKT_REFRESH_TOKEN:
-        required: false
-      TRAKT_USERNAME:
-        required: false
-      GOOGLE_SHARE_EMAIL:
-        required: false
-      SYNC_GOOGLE:
-        required: false
-      BACKLOGGD_USERNAME:
-        required: false
-      CLIENT_ID:
-        required: false
-      CLIENT_SECRET:
-        required: false
-      REDIRECT_URI:
-        required: false
-      LASTFM_API_KEY:
-        required: false
-      LASTFM_USERNAME:
-        required: false
-      YOUTUBE_API_KEY:
-        required: false
-      YOUTUBE_PLAYLIST_ID:
+        description: "SonarCloud API token"
         required: false
 
 permissions:
