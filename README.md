@@ -8,8 +8,8 @@ This repository contains reusable GitHub Actions workflows (`workflow_call`) use
 
 | Workflow | Description | Path |
 | :--- | :--- | :--- |
-| **Node.js CI/CD** | Lint (Prettier/ESLint), TypeScript, Tests + Coverage, SonarCloud, Next.js Caching, Bundle Build, Dependency Review, Docker Security & SBOM | [`.github/workflows/reusable-node-ci.yml`](.github/workflows/reusable-node-ci.yml) |
-| **Python CI/CD** | Ruff (lint & format), Mypy, Pytest + Coverage, SonarCloud, Dependency Review, Docker Build & Trivy/ClamAV/SBOM | [`.github/workflows/reusable-python-ci.yml`](.github/workflows/reusable-python-ci.yml) |
+| **Node.js CI/CD** | Lint (Prettier/ESLint), TypeScript, Tests + Coverage, SonarCloud, Next.js Caching, Bundle Build, Dependency Review, Docker Security, SBOM & `ghcr.io` Publish | [`.github/workflows/reusable-node-ci.yml`](.github/workflows/reusable-node-ci.yml) |
+| **Python CI/CD** | Ruff (lint & format), Mypy, Pytest + Coverage, SonarCloud, Dependency Review, Docker Build, Trivy/ClamAV/SBOM & `ghcr.io` Publish | [`.github/workflows/reusable-python-ci.yml`](.github/workflows/reusable-python-ci.yml) |
 | **Android CI/CD** | JDK 21, Spotless, Android Lint (SARIF), JUnit + JaCoCo, SonarCloud, Debug APK, Dependency Review | [`.github/workflows/reusable-android-ci.yml`](.github/workflows/reusable-android-ci.yml) |
 | **CodeQL SAST** | CodeQL Security Analysis uploading SARIF to GitHub Security tab | [`.github/workflows/reusable-codeql.yml`](.github/workflows/reusable-codeql.yml) |
 
@@ -30,6 +30,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
   security-events: write
 
 jobs:
@@ -39,6 +40,7 @@ jobs:
       node-version: "24.19.0"
       run-build: true
       build-output-dir: "dist" # Or .next, out, build
+      test-docker: true
     secrets: inherit
 ```
 
@@ -57,6 +59,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
   security-events: write
 
 jobs:
@@ -83,6 +86,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
   security-events: write
 
 jobs:
