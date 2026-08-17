@@ -35,7 +35,7 @@ jobs:
           distribution: "temurin"
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4.3.0
+        uses: gradle/actions/setup-gradle@v6.3.0
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
@@ -83,3 +83,15 @@ jobs:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
+
+  dependency-review:
+    name: Dependency Vulnerability Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Run Dependency Review
+        uses: actions/dependency-review-action@v4.5.0
+        continue-on-error: true
