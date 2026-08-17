@@ -22,10 +22,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up JDK 21
+        if: inputs.language == 'java-kotlin'
+        uses: actions/setup-java@v4.7.1
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Grant execute permission for gradlew
+        if: inputs.language == 'java-kotlin'
+        run: |
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+          fi
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.37.7
         with:
           languages: ${{ inputs.language }}
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4.37.7
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.37.7
