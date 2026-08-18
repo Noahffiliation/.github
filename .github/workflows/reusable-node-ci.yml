@@ -280,7 +280,7 @@ jobs:
       - name: Extract Docker Metadata (Tags & Labels)
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         id: meta
-        uses: docker/metadata-action@v5.7.0
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
