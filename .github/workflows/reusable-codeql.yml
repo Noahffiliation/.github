@@ -4,8 +4,15 @@ on:
   workflow_call:
     inputs:
       language:
-        description: "Language to analyze: 'javascript-typescript', 'python', 'java-kotlin', etc."
         required: true
+        type: string
+      build-mode:
+        required: false
+        default: "autobuild"
+        type: string
+      build-command:
+        required: false
+        default: ""
         type: string
 
 permissions:
@@ -40,10 +47,13 @@ jobs:
         uses: github/codeql-action/init@v4.37.9
         with:
           languages: ${{ inputs.language }}
-
+          build-mode: ${{ inputs.build-mode }}
       - name: Autobuild
+        if: inputs.build-mode == 'autobuild'
         uses: github/codeql-action/autobuild@v4.37.9
-
+      - name: Manual Build
+        if: inputs.build-mode == 'manual' && inputs.build-command != ''
+        run: ${{ inputs.build-command }}
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.37.9
         with:
