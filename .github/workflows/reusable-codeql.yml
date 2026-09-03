@@ -4,13 +4,16 @@ on:
   workflow_call:
     inputs:
       language:
+        description: "Language to analyze: 'javascript-typescript', 'python', 'java-kotlin', etc."
         required: true
         type: string
       build-mode:
+        description: "Build mode: 'none', 'autobuild', or 'manual'. If omitted, defaults to 'none' for interpreted languages (Python, JS/TS, Ruby) and 'autobuild' for compiled languages."
         required: false
-        default: "autobuild"
+        default: ""
         type: string
       build-command:
+        description: "Custom build command when build-mode is 'manual' (e.g. './gradlew assembleDebug')."
         required: false
         default: ""
         type: string
@@ -43,17 +46,38 @@ jobs:
             chmod +x ./gradlew
           fi
 
+      - name: Determine Build Mode
+        id: build-mode
+        run: |
+          if [ -n "${{ inputs.build-mode }}" ]; then
+            MODE="${{ inputs.build-mode }}"
+          else
+            case "${{ inputs.language }}" in
+              python|javascript-typescript|javascript|ruby|actions)
+                MODE="none"
+                ;;
+              *)
+                MODE="autobuild"
+                ;;
+            esac
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "Selected build mode: $MODE for language: ${{ inputs.language }}"
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.37.9
         with:
           languages: ${{ inputs.language }}
-          build-mode: ${{ inputs.build-mode }}
+          build-mode: ${{ steps.build-mode.outputs.mode }}
+      
       - name: Autobuild
-        if: inputs.build-mode == 'autobuild'
+        if: steps.build-mode.outputs.mode == 'autobuild'
         uses: github/codeql-action/autobuild@v4.37.9
+      
       - name: Manual Build
-        if: inputs.build-mode == 'manual' && inputs.build-command != ''
+        if: steps.build-mode.outputs.mode == 'manual' && inputs.build-command != ''
         run: ${{ inputs.build-command }}
+      
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4.37.9
         with:

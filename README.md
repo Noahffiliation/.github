@@ -137,3 +137,12 @@ jobs:
     with:
       language: "python" # Or 'javascript-typescript', 'java-kotlin'
 ```
+
+For compiled projects requiring custom build steps (e.g. Android / Gradle):
+```yaml
+    uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@main
+    with:
+      language: "java-kotlin"
+      build-mode: "manual"
+      build-command: "./gradlew assembleDebug --no-build-cache --no-daemon"
+```
