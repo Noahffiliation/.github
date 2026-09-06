@@ -174,23 +174,40 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 1. Trivy Vulnerability & Security Scanner
-      - name: Run Trivy Security Vulnerability Scan
-        uses: aquasecurity/trivy-action@v0.36.0
+      # 1. Grype Vulnerability & Security Scanner
+      - name: Run Grype Security Vulnerability Scan
+        uses: anchore/scan-action@v7.4.2
+        id: grype-scan
         with:
-          image-ref: app:test-${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
-          ignore-unfixed: true
+          image: app:test-${{ github.sha }}
+          output-format: 'sarif'
+          output-file: 'grype-results.sarif'
+          fail-build: false
 
       - name: Upload Container Security SARIF to GitHub Security Tab
         if: always()
         uses: github/codeql-action/upload-sarif@v4.37.9
         continue-on-error: true
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: 'grype-results.sarif'
           category: 'container-security'
+
+      - name: Upload Container Security Artifact
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        continue-on-error: true
+        with:
+          name: container-security
+          path: grype-results.sarif
+          retention-days: 30
+
+      - name: Verify No Fixable High or Critical Vulnerabilities
+        uses: anchore/scan-action@v7.4.2
+        with:
+          image: app:test-${{ github.sha }}
+          only-fixed: true
+          severity-cutoff: high
+          fail-build: true
 
       # 2. Antivirus / Malware Scan (ClamAV)
       - name: Antivirus & Malware Scan (ClamAV)
