@@ -52,31 +52,42 @@ jobs:
   lint:
     name: Lint & Format Check
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
 
-      - name: Setup Node.js (with npm cache)
+      - name: Setup Node.js
         uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ inputs.node-version }}
-          cache: "npm"
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       - name: Check Formatting (Prettier / Biome)
-        run: npx prettier --check . || npm run format:check || true
+        continue-on-error: true
+        run: npx prettier --check . || npm run format:check
 
       - name: Run Linter (ESLint)
         run: npm run lint
 
       - name: Run Type Check (TypeScript)
-        run: npx tsc --noEmit || npm run type-check || true
+        continue-on-error: true
+        run: npx tsc --noEmit || npm run type-check
 
   test:
     name: Test & Coverage
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       # Injected directly from calling repository's GitHub Secrets and Variables
@@ -99,11 +110,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
 
-      - name: Setup Node.js (with npm cache)
+      - name: Setup Node.js
         uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ inputs.node-version }}
-          cache: "npm"
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --ignore-scripts
 
       - name: Cache SonarQube Scanner
         if: env.SONAR_TOKEN != ''
@@ -112,9 +133,6 @@ jobs:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
 
       - name: Run Tests with Coverage
         run: npm run test:coverage
@@ -132,7 +150,18 @@ jobs:
         with:
           name: node-coverage-report
           path: coverage/
-          retention-days: 30
+          retention-days: 14
+
+      - name: Generate Test Summary
+        if: always()
+        run: |
+          echo "## ⚡ Node.js CI Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Node.js Version** | \`${{ inputs.node-version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Test Outcome** | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Coverage Report** | Uploaded to artifacts |" >> $GITHUB_STEP_SUMMARY
 
   dependency-review:
     name: Dependency Vulnerability Review
@@ -150,6 +179,7 @@ jobs:
     name: Build & Package
     if: inputs.run-build
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       # Injected directly from calling repository's GitHub Secrets and Variables
       LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
@@ -169,11 +199,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
 
-      - name: Setup Node.js (with npm cache)
+      - name: Setup Node.js
         uses: actions/setup-node@v7.0.0
         with:
           node-version: ${{ inputs.node-version }}
-          cache: "npm"
+
+      - name: Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/package-lock.json') }}
 
       - name: Cache Next.js / Build Output
         uses: actions/cache@v6.1.0
@@ -185,6 +221,7 @@ jobs:
           restore-keys: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
       - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       - name: Build Application Bundle
@@ -195,12 +232,13 @@ jobs:
         with:
           name: build-artifact
           path: ${{ inputs.build-output-dir }}
-          retention-days: 30
+          retention-days: 14
 
   docker-build:
     name: Build Container, Security Scan, SBOM & Publish
     if: inputs.test-docker
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -212,21 +250,56 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.3.0
 
-      - name: Build Docker Container (Local Daemon)
+      - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker Metadata (Tags & Labels)
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=true
+            type=sha,prefix=sha-,format=short
+
+      - name: Determine Image Tags & Target
+        id: img-config
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ] && { [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; }; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "tags=${{ steps.meta.outputs.tags }}" >> "$GITHUB_OUTPUT"
+            PRIMARY_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+            echo "scan_image=$PRIMARY_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "tags=app:test-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "scan_image=app:test-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and Deliver Docker Container
         uses: docker/build-push-action@v7.3.0
         with:
           context: .
-          load: true
-          tags: app:test-${{ github.sha }}
+          push: ${{ steps.img-config.outputs.push == 'true' }}
+          load: ${{ steps.img-config.outputs.push != 'true' }}
+          pull: true
+          tags: ${{ steps.img-config.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 1. Grype Vulnerability & Security Scanner
+      # 1. Grype Vulnerability & Security Scanner (Scans registry image or local daemon directly)
       - name: Run Grype Security Vulnerability Scan
         uses: anchore/scan-action@v7.4.2
         id: grype-scan
         with:
-          image: app:test-${{ github.sha }}
+          image: ${{ steps.img-config.outputs.scan_image }}
           output-format: 'sarif'
           output-file: 'grype-results.sarif'
           fail-build: false
@@ -246,24 +319,46 @@ jobs:
         with:
           name: container-security
           path: grype-results.sarif
-          retention-days: 30
+          retention-days: 14
 
       - name: Verify No Fixable High or Critical Vulnerabilities
         uses: anchore/scan-action@v7.4.2
         with:
-          image: app:test-${{ github.sha }}
+          image: ${{ steps.img-config.outputs.scan_image }}
           only-fixed: true
           severity-cutoff: high
           fail-build: true
 
-      # 2. Antivirus / Malware Scan (ClamAV)
+      # 2. Antivirus / Malware Scan (ClamAV with definition caching)
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache ClamAV Database
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/clamav
+          key: clamav-db-${{ runner.os }}-${{ steps.date.outputs.date }}
+          restore-keys: |
+            clamav-db-${{ runner.os }}-
+
       - name: Antivirus & Malware Scan (ClamAV)
         run: |
           sudo apt-get update && sudo apt-get install -y clamav
           sudo systemctl stop clamav-freshclam.service || true
+          mkdir -p ~/.cache/clamav
+          if [ -d /var/lib/clamav ] && [ -n "$(ls -A ~/.cache/clamav 2>/dev/null)" ]; then
+            sudo cp -rn ~/.cache/clamav/* /var/lib/clamav/ 2>/dev/null || true
+          fi
           sudo freshclam || true
-          docker save app:test-${{ github.sha }} -o container-image.tar
-          if [ -d /var/lib/clamav ] && [ "$(ls -A /var/lib/clamav)" ]; then
+          if [ -d /var/lib/clamav ]; then
+            cp -rn /var/lib/clamav/* ~/.cache/clamav/ 2>/dev/null || true
+          fi
+          if [ "${{ steps.img-config.outputs.push }}" = "true" ]; then
+            docker pull "${{ steps.img-config.outputs.scan_image }}"
+          fi
+          docker save "${{ steps.img-config.outputs.scan_image }}" -o container-image.tar
+          if [ -d /var/lib/clamav ] && [ -n "$(ls -A /var/lib/clamav 2>/dev/null)" ]; then
             clamscan --infected --recursive container-image.tar
           else
             echo "ClamAV database not loaded, skipping offline signature scan."
@@ -274,7 +369,7 @@ jobs:
       - name: Generate SBOM (SPDX JSON format)
         uses: anchore/sbom-action@v0.24.2
         with:
-          image: app:test-${{ github.sha }}
+          image: ${{ steps.img-config.outputs.scan_image }}
           format: 'spdx-json'
           output-file: 'container-sbom.spdx.json'
 
@@ -283,34 +378,4 @@ jobs:
         with:
           name: container-sbom
           path: container-sbom.spdx.json
-          retention-days: 30
-
-      # 4. Publish Verified Container to GitHub Container Registry (ghcr.io) on main branch
-      - name: Log in to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: docker/login-action@v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker Metadata (Tags & Labels)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        id: meta
-        uses: docker/metadata-action@v6.2.0
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable=true
-            type=sha,prefix=sha-,format=short
-
-      - name: Push Container to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: docker/build-push-action@v7.3.0
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          retention-days: 14

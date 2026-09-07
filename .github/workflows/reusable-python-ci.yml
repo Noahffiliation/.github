@@ -31,16 +31,21 @@ jobs:
   lint:
     name: Lint & Format Check (Python)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
 
-      - name: Setup Python (with pip cache)
+      - name: Setup Python
         uses: actions/setup-python@v7.0.0
         with:
           python-version: ${{ inputs.python-version }}
-          cache: "pip"
-          cache-dependency-path: "**/requirements*.txt"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/requirements*.txt"
 
       - name: Cache Ruff & Mypy
         uses: actions/cache@v6.1.0
@@ -54,9 +59,8 @@ jobs:
 
       - name: Install Linting & Typing Tools
         run: |
-          python -m pip install --upgrade pip
-          pip install ruff mypy
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          uv pip install --system ruff mypy
+          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
 
       - name: Run Ruff Lint
         run: ruff check .
@@ -65,11 +69,13 @@ jobs:
         run: ruff format --check .
 
       - name: Type Check (mypy)
-        run: mypy . || true
+        continue-on-error: true
+        run: mypy .
 
   test:
     name: Test & Coverage (Python)
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       # Injected directly from calling repository's GitHub Secrets and Variables
@@ -95,12 +101,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
 
-      - name: Setup Python (with pip cache)
+      - name: Setup Python
         uses: actions/setup-python@v7.0.0
         with:
           python-version: ${{ inputs.python-version }}
-          cache: "pip"
-          cache-dependency-path: "**/requirements*.txt"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/requirements*.txt"
 
       - name: Cache Pytest & Sonar
         uses: actions/cache@v6.1.0
@@ -114,9 +124,8 @@ jobs:
 
       - name: Install Test Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pytest pytest-cov pytest-asyncio
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          uv pip install --system pytest pytest-cov pytest-asyncio
+          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
 
       - name: Run Pytest with Coverage
         run: pytest --cov=. --cov-report=xml --cov-report=term
@@ -134,7 +143,18 @@ jobs:
         with:
           name: python-coverage-report
           path: coverage.xml
-          retention-days: 30
+          retention-days: 14
+
+      - name: Generate Test Summary
+        if: always()
+        run: |
+          echo "## 🐍 Python CI Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Python Version** | \`${{ inputs.python-version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Test Outcome** | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Coverage Report** | \`coverage.xml\` (uploaded) |" >> $GITHUB_STEP_SUMMARY
 
   dependency-review:
     name: Dependency Vulnerability Review
@@ -152,6 +172,7 @@ jobs:
     name: Build Container, Security Scan, SBOM & Publish
     if: inputs.test-docker
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -163,23 +184,57 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.3.0
 
-      - name: Build Docker Container (Local Daemon)
+      - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker Metadata (Tags & Labels)
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable=true
+            type=sha,prefix=sha-,format=short
+
+      - name: Determine Image Tags & Target
+        id: img-config
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ] && { [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; }; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+            echo "tags=${{ steps.meta.outputs.tags }}" >> "$GITHUB_OUTPUT"
+            PRIMARY_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+            echo "scan_image=$PRIMARY_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "tags=app:test-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "scan_image=app:test-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and Deliver Docker Container
         uses: docker/build-push-action@v7.3.0
         with:
           context: .
-          load: true
+          push: ${{ steps.img-config.outputs.push == 'true' }}
+          load: ${{ steps.img-config.outputs.push != 'true' }}
           pull: true
           no-cache: ${{ inputs.docker-no-cache }}
-          tags: app:test-${{ github.sha }}
+          tags: ${{ steps.img-config.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 1. Grype Vulnerability & Security Scanner
+      # 1. Grype Vulnerability & Security Scanner (Scans registry image or local daemon directly)
       - name: Run Grype Security Vulnerability Scan
         uses: anchore/scan-action@v7.4.2
         id: grype-scan
         with:
-          image: app:test-${{ github.sha }}
+          image: ${{ steps.img-config.outputs.scan_image }}
           output-format: 'sarif'
           output-file: 'grype-results.sarif'
           fail-build: false
@@ -199,24 +254,46 @@ jobs:
         with:
           name: container-security
           path: grype-results.sarif
-          retention-days: 30
+          retention-days: 14
 
       - name: Verify No Fixable High or Critical Vulnerabilities
         uses: anchore/scan-action@v7.4.2
         with:
-          image: app:test-${{ github.sha }}
+          image: ${{ steps.img-config.outputs.scan_image }}
           only-fixed: true
           severity-cutoff: high
           fail-build: true
 
-      # 2. Antivirus / Malware Scan (ClamAV)
+      # 2. Antivirus / Malware Scan (ClamAV with definition caching)
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache ClamAV Database
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/clamav
+          key: clamav-db-${{ runner.os }}-${{ steps.date.outputs.date }}
+          restore-keys: |
+            clamav-db-${{ runner.os }}-
+
       - name: Antivirus & Malware Scan (ClamAV)
         run: |
           sudo apt-get update && sudo apt-get install -y clamav
           sudo systemctl stop clamav-freshclam.service || true
+          mkdir -p ~/.cache/clamav
+          if [ -d /var/lib/clamav ] && [ -n "$(ls -A ~/.cache/clamav 2>/dev/null)" ]; then
+            sudo cp -rn ~/.cache/clamav/* /var/lib/clamav/ 2>/dev/null || true
+          fi
           sudo freshclam || true
-          docker save app:test-${{ github.sha }} -o container-image.tar
-          if [ -d /var/lib/clamav ] && [ "$(ls -A /var/lib/clamav)" ]; then
+          if [ -d /var/lib/clamav ]; then
+            cp -rn /var/lib/clamav/* ~/.cache/clamav/ 2>/dev/null || true
+          fi
+          if [ "${{ steps.img-config.outputs.push }}" = "true" ]; then
+            docker pull "${{ steps.img-config.outputs.scan_image }}"
+          fi
+          docker save "${{ steps.img-config.outputs.scan_image }}" -o container-image.tar
+          if [ -d /var/lib/clamav ] && [ -n "$(ls -A /var/lib/clamav 2>/dev/null)" ]; then
             clamscan --infected --recursive container-image.tar
           else
             echo "ClamAV database not loaded, skipping offline signature scan."
@@ -227,7 +304,7 @@ jobs:
       - name: Generate SBOM (SPDX JSON format)
         uses: anchore/sbom-action@v0.24.2
         with:
-          image: app:test-${{ github.sha }}
+          image: ${{ steps.img-config.outputs.scan_image }}
           format: 'spdx-json'
           output-file: 'container-sbom.spdx.json'
 
@@ -236,35 +313,4 @@ jobs:
         with:
           name: container-sbom
           path: container-sbom.spdx.json
-          retention-days: 30
-
-      # 4. Publish Verified Container to GitHub Container Registry (ghcr.io) on main branch
-      - name: Log in to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: docker/login-action@v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract Docker Metadata (Tags & Labels)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        id: meta
-        uses: docker/metadata-action@v6.2.0
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable=true
-            type=sha,prefix=sha-,format=short
-
-      - name: Push Container to GitHub Container Registry
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: docker/build-push-action@v7.3.0
-        with:
-          context: .
-          push: true
-          pull: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          retention-days: 14

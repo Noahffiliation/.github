@@ -20,6 +20,7 @@ jobs:
   android-ci:
     name: Android Build, Lint & Test
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
@@ -51,7 +52,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Spotless Formatter Check
-        run: ./gradlew spotlessCheck || true
+        continue-on-error: true
+        run: ./gradlew spotlessCheck
 
       - name: Run Android Lint
         run: ./gradlew lintDebug
@@ -82,7 +84,18 @@ jobs:
         with:
           name: app-debug-apk
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 30
+          retention-days: 14
+
+      - name: Generate Android Summary
+        if: always()
+        run: |
+          echo "## 🤖 Android CI Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **JDK Version** | \`${{ inputs.java-version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Outcome** | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Artifact** | \`app-debug-apk\` |" >> $GITHUB_STEP_SUMMARY
 
   dependency-review:
     name: Dependency Vulnerability Review

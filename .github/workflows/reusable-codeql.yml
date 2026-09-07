@@ -26,6 +26,7 @@ jobs:
   codeql:
     name: CodeQL Security Scan (${{ inputs.language }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
