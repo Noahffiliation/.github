@@ -270,11 +270,15 @@ jobs:
 
       - name: Determine Image Tags & Target
         id: img-config
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ] && { [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; }; then
             echo "push=true" >> "$GITHUB_OUTPUT"
-            echo "tags=${{ steps.meta.outputs.tags }}" >> "$GITHUB_OUTPUT"
-            PRIMARY_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+            echo "tags<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$META_TAGS" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            PRIMARY_TAG=$(echo "$META_TAGS" | head -n 1)
             echo "scan_image=$PRIMARY_TAG" >> "$GITHUB_OUTPUT"
           else
             echo "push=false" >> "$GITHUB_OUTPUT"
