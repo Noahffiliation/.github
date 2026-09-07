@@ -50,7 +50,7 @@ jobs:
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
-          cache-dependency-glob: "**/requirements*.txt"
+          cache-dependency-glob: "**/uv.lock"
 
       - name: Cache Ruff & Mypy
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -64,18 +64,22 @@ jobs:
 
       - name: Install Linting & Typing Tools
         run: |
-          uv pip install --system ruff mypy
-          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+          if [ -f uv.lock ]; then
+            uv sync --all-groups
+          else
+            uv pip install --system ruff mypy
+            if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+          fi
 
       - name: Run Ruff Lint
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Check Formatting (Ruff)
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Type Check (mypy)
         continue-on-error: true
-        run: mypy .
+        run: uv run mypy .
 
   test:
     name: Test & Coverage (Python)
@@ -98,7 +102,7 @@ jobs:
         uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
-          cache-dependency-glob: "**/requirements*.txt"
+          cache-dependency-glob: "**/uv.lock"
 
       - name: Cache Pytest & Sonar
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -121,11 +125,15 @@ jobs:
 
       - name: Install Test Dependencies
         run: |
-          uv pip install --system pytest pytest-cov pytest-asyncio
-          if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+          if [ -f uv.lock ]; then
+            uv sync --all-groups
+          else
+            uv pip install --system pytest pytest-cov pytest-asyncio
+            if [ -f requirements.txt ]; then uv pip install --system -r requirements.txt; fi
+          fi
 
       - name: Run Pytest with Coverage
-        run: pytest --cov=. --cov-report=xml --cov-report=term
+        run: uv run pytest --cov=. --cov-report=xml --cov-report=term
 
       - name: SonarQube / SonarCloud Scan
         if: env.SONAR_TOKEN != ''
