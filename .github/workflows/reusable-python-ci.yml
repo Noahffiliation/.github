@@ -18,6 +18,11 @@ on:
         required: false
         default: true
         type: boolean
+      test-env:
+        description: "Optional multiline string of KEY=VALUE pairs to inject into the test runner environment"
+        required: false
+        default: ""
+        type: string
     secrets:
       SONAR_TOKEN:
         description: "SonarCloud API token"
@@ -34,21 +39,21 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ inputs.python-version }}
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
           cache-dependency-glob: "**/requirements*.txt"
 
       - name: Cache Ruff & Mypy
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .mypy_cache
@@ -78,42 +83,23 @@ jobs:
     timeout-minutes: 15
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      # Injected directly from calling repository's GitHub Secrets and Variables
-      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-      NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID || vars.NOTION_PAGE_ID }}
-      TRAKT_ACCESS_TOKEN: ${{ secrets.TRAKT_ACCESS_TOKEN }}
-      TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
-      TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
-      TRAKT_REFRESH_TOKEN: ${{ secrets.TRAKT_REFRESH_TOKEN }}
-      TRAKT_USERNAME: ${{ secrets.TRAKT_USERNAME || vars.TRAKT_USERNAME }}
-      GOOGLE_SHARE_EMAIL: ${{ secrets.GOOGLE_SHARE_EMAIL || vars.GOOGLE_SHARE_EMAIL }}
-      SYNC_GOOGLE: ${{ secrets.SYNC_GOOGLE || vars.SYNC_GOOGLE }}
-      BACKLOGGD_USERNAME: ${{ secrets.BACKLOGGD_USERNAME || vars.BACKLOGGD_USERNAME }}
-      CLIENT_ID: ${{ secrets.CLIENT_ID }}
-      CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-      REDIRECT_URI: ${{ secrets.REDIRECT_URI || vars.REDIRECT_URI }}
-      LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
-      LASTFM_USERNAME: ${{ secrets.LASTFM_USERNAME || vars.LASTFM_USERNAME }}
-      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-      YOUTUBE_PLAYLIST_ID: ${{ secrets.YOUTUBE_PLAYLIST_ID || vars.YOUTUBE_PLAYLIST_ID }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ inputs.python-version }}
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
           cache-dependency-glob: "**/requirements*.txt"
 
       - name: Cache Pytest & Sonar
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .pytest_cache
@@ -121,6 +107,15 @@ jobs:
           key: ${{ runner.os }}-pytest-sonar-${{ hashFiles('**/*.py') }}
           restore-keys: |
             ${{ runner.os }}-pytest-sonar-
+
+      - name: Export Custom Test Environment
+        if: inputs.test-env != ''
+        run: |
+          while IFS= read -r line; do
+            if [ -n "$line" ] && [[ ! "$line" =~ ^# ]]; then
+              echo "$line" >> "$GITHUB_ENV"
+            fi
+          done <<< "${{ inputs.test-env }}"
 
       - name: Install Test Dependencies
         run: |
@@ -132,14 +127,14 @@ jobs:
 
       - name: SonarQube / SonarCloud Scan
         if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@v8.2.1
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Coverage Artifacts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: python-coverage-report
           path: coverage.xml
@@ -162,10 +157,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Run Dependency Review
-        uses: actions/dependency-review-action@v5.0.0
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         continue-on-error: true
 
   docker-build:
@@ -179,14 +174,14 @@ jobs:
       security-events: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.3.0
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to GitHub Container Registry
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: docker/login-action@v4.6.0
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -195,7 +190,7 @@ jobs:
       - name: Extract Docker Metadata (Tags & Labels)
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         id: meta
-        uses: docker/metadata-action@v6.2.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
@@ -221,7 +216,7 @@ jobs:
           fi
 
       - name: Build and Deliver Docker Container
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           push: ${{ steps.img-config.outputs.push == 'true' }}
@@ -235,17 +230,20 @@ jobs:
 
       # 1. Grype Vulnerability & Security Scanner (Scans registry image or local daemon directly)
       - name: Run Grype Security Vulnerability Scan
-        uses: anchore/scan-action@v7.4.2
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         id: grype-scan
         with:
           image: ${{ steps.img-config.outputs.scan_image }}
           output-format: 'sarif'
           output-file: 'grype-results.sarif'
-          fail-build: false
+          severity-cutoff: high
+          only-fixed: true
+          cache-db: true
+          add-cpes-if-none: true
 
       - name: Upload Container Security SARIF to GitHub Security Tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v4.37.9
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         continue-on-error: true
         with:
           sarif_file: 'grype-results.sarif'
@@ -253,7 +251,7 @@ jobs:
 
       - name: Upload Container Security Artifact
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         continue-on-error: true
         with:
           name: container-security
@@ -261,7 +259,7 @@ jobs:
           retention-days: 14
 
       - name: Verify No Fixable High or Critical Vulnerabilities
-        uses: anchore/scan-action@v7.4.2
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
           image: ${{ steps.img-config.outputs.scan_image }}
           only-fixed: true
@@ -274,7 +272,7 @@ jobs:
         run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Cache ClamAV Database
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/clamav
           key: clamav-db-${{ runner.os }}-${{ steps.date.outputs.date }}
@@ -306,14 +304,14 @@ jobs:
 
       # 3. Generate Software Bill of Materials (SBOM) via Syft
       - name: Generate SBOM (SPDX JSON format)
-        uses: anchore/sbom-action@v0.24.2
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: ${{ steps.img-config.outputs.scan_image }}
           format: 'spdx-json'
           output-file: 'container-sbom.spdx.json'
 
       - name: Upload SBOM Artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: container-sbom
           path: container-sbom.spdx.json
