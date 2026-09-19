@@ -318,12 +318,17 @@ jobs:
 
           echo "=== ClamAV Version Check ==="
           INSTALLED_CLAMAV=$(clamscan --version 2>/dev/null | awk '{print $2}' | cut -d/ -f1 || echo "unknown")
-          LATEST_CLAMAV=$(curl -s --connect-timeout 5 "https://dns.google/resolve?name=current.cvd.clamav.net&type=TXT" 2>/dev/null | grep -oP '"data":"\K[^:]+' || true)
+          LATEST_CLAMAV=$(curl -s --connect-timeout 5 https://api.github.com/repos/Cisco-Talos/clamav/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"clamav-?v?([^"]+)".*/\1/' || true)
+          if [ -z "$LATEST_CLAMAV" ]; then
+            LATEST_CLAMAV=$(curl -s --connect-timeout 5 "https://dns.google/resolve?name=current.cvd.clamav.net&type=TXT" 2>/dev/null | grep -oP '"data":"\K[^:]+' || true)
+          fi
           echo "Installed ClamAV version: ${INSTALLED_CLAMAV}"
           if [ -n "$LATEST_CLAMAV" ]; then
             echo "Latest upstream ClamAV engine version: ${LATEST_CLAMAV}"
-            if [ "$INSTALLED_CLAMAV" != "unknown" ] && [ "$INSTALLED_CLAMAV" != "$LATEST_CLAMAV" ]; then
+            if [ "$INSTALLED_CLAMAV" != "unknown" ] && [ "$INSTALLED_CLAMAV" != "$LATEST_CLAMAV" ] && [ "$(printf '%s\n%s' "$INSTALLED_CLAMAV" "$LATEST_CLAMAV" | sort -V | head -n 1)" = "$INSTALLED_CLAMAV" ]; then
               echo "::warning::A newer version of ClamAV engine is available (${LATEST_CLAMAV}). Installed: ${INSTALLED_CLAMAV}"
+            else
+              echo "ClamAV engine is up to date."
             fi
           fi
 
