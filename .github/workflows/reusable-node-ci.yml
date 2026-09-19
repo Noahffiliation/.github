@@ -288,8 +288,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "Checking latest upstream Grype release..."
-          LATEST_GRYPE=$(gh release view --repo anchore/grype --json tagName --jq .tagName 2>/dev/null || curl -s --connect-timeout 5 https://api.github.com/repos/anchore/grype/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+          LATEST_GRYPE=$(gh release view --repo anchore/grype --json tagName --jq .tagName 2>/dev/null || curl -s --connect-timeout 5 https://api.github.com/repos/anchore/grype/releases/latest 2>/dev/null | grep -ioP '"tag_name":\s*"\K[^"]+' | head -n 1 || echo "")
           if [ -n "$LATEST_GRYPE" ]; then
+            [[ "$LATEST_GRYPE" =~ ^[0-9] ]] && LATEST_GRYPE="v${LATEST_GRYPE}"
             echo "version=${LATEST_GRYPE}" >> "$GITHUB_OUTPUT"
             echo "Resolved latest upstream Grype version: ${LATEST_GRYPE}"
           else
@@ -361,9 +362,9 @@ jobs:
 
           echo "=== ClamAV Version Check ==="
           INSTALLED_CLAMAV=$(clamscan --version 2>/dev/null | awk '{print $2}' | cut -d/ -f1 || echo "unknown")
-          LATEST_CLAMAV=$(curl -s --connect-timeout 5 https://api.github.com/repos/Cisco-Talos/clamav/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"clamav-?v?([^"]+)".*/\1/' || true)
+          LATEST_CLAMAV=$(curl -s --connect-timeout 5 https://api.github.com/repos/Cisco-Talos/clamav/releases/latest 2>/dev/null | grep -ioP '"tag_name":\s*"(?:clamav-)?v?\K[^"]+' | head -n 1 || true)
           if [ -z "$LATEST_CLAMAV" ]; then
-            LATEST_CLAMAV=$(curl -s --connect-timeout 5 "https://dns.google/resolve?name=current.cvd.clamav.net&type=TXT" 2>/dev/null | grep -oP '"data":"\K[^:]+' || true)
+            LATEST_CLAMAV=$(curl -s --connect-timeout 5 "https://dns.google/resolve?name=current.cvd.clamav.net&type=TXT" 2>/dev/null | grep -oP '"data":"\K[^:]+' | head -n 1 || true)
           fi
           echo "Installed ClamAV version: ${INSTALLED_CLAMAV}"
           if [ -n "$LATEST_CLAMAV" ]; then
