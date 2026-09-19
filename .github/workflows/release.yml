@@ -1,0 +1,60 @@
+name: Auto Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Determine Next Version & Create Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --tags
+
+          # Skip if current commit already has a tag
+          if [ -n "$(git tag --points-at HEAD)" ]; then
+            echo "HEAD is already tagged, skipping release."
+            exit 0
+          fi
+
+          # Find the highest semver tag (e.g. v1.3.1)
+          LATEST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEXT_TAG="v1.0.0"
+            MAJOR="1"
+          else
+            VERSION="${LATEST_TAG#v}"
+            MAJOR=$(echo "$VERSION" | cut -d. -f1)
+            MINOR=$(echo "$VERSION" | cut -d. -f2)
+            PATCH=$(echo "$VERSION" | cut -d. -f3)
+            NEXT_PATCH=$((PATCH + 1))
+            NEXT_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          fi
+
+          echo "Releasing $NEXT_TAG (previous: $LATEST_TAG)"
+
+          # Create the GitHub Release with auto-generated notes
+          gh release create "$NEXT_TAG" \
+            --title "$NEXT_TAG" \
+            --generate-notes
+
+          # Configure bot identity and move the floating major tag (v1)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa "v${MAJOR}" -m "Update v${MAJOR} to $NEXT_TAG"
+          git push origin "v${MAJOR}" --force
