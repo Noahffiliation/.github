@@ -399,7 +399,7 @@ jobs:
           fi
           docker save "${{ steps.img-config.outputs.scan_image }}" -o container-image.tar
           if [ -d /var/lib/clamav ] && [ -n "$(ls -A /var/lib/clamav 2>/dev/null)" ]; then
-            clamscan --infected --recursive container-image.tar
+            clamscan --database=/var/lib/clamav --infected --recursive container-image.tar
           else
             echo "ClamAV database not loaded, skipping offline signature scan."
           fi
