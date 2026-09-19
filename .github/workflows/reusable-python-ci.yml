@@ -239,11 +239,29 @@ jobs:
           cache-to: type=gha,mode=max
 
       # 1. Grype Vulnerability & Security Scanner (Scans registry image or local daemon directly)
+      - name: Check Grype Version and Updates
+        id: grype-version-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Checking latest upstream Grype release..."
+          LATEST_GRYPE=$(gh release view --repo anchore/grype --json tagName --jq .tagName 2>/dev/null || curl -s --connect-timeout 5 https://api.github.com/repos/anchore/grype/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+          if [ -n "$LATEST_GRYPE" ]; then
+            echo "version=${LATEST_GRYPE}" >> "$GITHUB_OUTPUT"
+            echo "Resolved latest upstream Grype version: ${LATEST_GRYPE}"
+          else
+            echo "Notice: Could not resolve latest Grype release tag, using action default version."
+          fi
+
       - name: Run Grype Security Vulnerability Scan
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         id: grype-scan
+        env:
+          GRYPE_DB_MAX_UPDATE_CHECK_FREQUENCY: 0s
+          GRYPE_DB_AUTO_UPDATE: "true"
         with:
           image: ${{ steps.img-config.outputs.scan_image }}
+          grype-version: ${{ steps.grype-version-check.outputs.version }}
           output-format: 'sarif'
           output-file: 'grype-results.sarif'
           severity-cutoff: high
@@ -270,8 +288,12 @@ jobs:
 
       - name: Verify No Fixable High or Critical Vulnerabilities
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        env:
+          GRYPE_DB_MAX_UPDATE_CHECK_FREQUENCY: 0s
+          GRYPE_DB_AUTO_UPDATE: "true"
         with:
           image: ${{ steps.img-config.outputs.scan_image }}
+          grype-version: ${{ steps.grype-version-check.outputs.version }}
           only-fixed: true
           severity-cutoff: high
           fail-build: true
@@ -293,14 +315,36 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y clamav
           sudo systemctl stop clamav-freshclam.service || true
+
+          echo "=== ClamAV Version Check ==="
+          INSTALLED_CLAMAV=$(clamscan --version 2>/dev/null | awk '{print $2}' | cut -d/ -f1 || echo "unknown")
+          LATEST_CLAMAV=$(curl -s --connect-timeout 5 "https://dns.google/resolve?name=current.cvd.clamav.net&type=TXT" 2>/dev/null | grep -oP '"data":"\K[^:]+' || true)
+          echo "Installed ClamAV version: ${INSTALLED_CLAMAV}"
+          if [ -n "$LATEST_CLAMAV" ]; then
+            echo "Latest upstream ClamAV engine version: ${LATEST_CLAMAV}"
+            if [ "$INSTALLED_CLAMAV" != "unknown" ] && [ "$INSTALLED_CLAMAV" != "$LATEST_CLAMAV" ]; then
+              echo "::warning::A newer version of ClamAV engine is available (${LATEST_CLAMAV}). Installed: ${INSTALLED_CLAMAV}"
+            fi
+          fi
+
+          echo "=== ClamAV Database Update Check ==="
           mkdir -p ~/.cache/clamav
           if [ -d /var/lib/clamav ] && [ -n "$(ls -A ~/.cache/clamav 2>/dev/null)" ]; then
             sudo cp -rn ~/.cache/clamav/* /var/lib/clamav/ 2>/dev/null || true
           fi
-          sudo freshclam || true
+
+          echo "Running freshclam to check and update malware signatures..."
+          if sudo freshclam --verbose; then
+            echo "ClamAV database updated successfully."
+          else
+            echo "::warning::freshclam update check failed or was rate-limited; continuing with existing database."
+          fi
+
           if [ -d /var/lib/clamav ]; then
             cp -rn /var/lib/clamav/* ~/.cache/clamav/ 2>/dev/null || true
           fi
+
+          echo "=== Scanning Container Image with ClamAV ==="
           if [ "${{ steps.img-config.outputs.push }}" = "true" ]; then
             docker pull "${{ steps.img-config.outputs.scan_image }}"
           fi
