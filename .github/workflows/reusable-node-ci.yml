@@ -216,6 +216,7 @@ jobs:
           name: build-artifact
           path: ${{ inputs.build-output-dir }}
           retention-days: 14
+          include-hidden-files: true
 
   docker-build:
     name: Build Container, Security Scan, SBOM & Publish
