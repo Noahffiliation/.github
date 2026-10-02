@@ -69,7 +69,7 @@ jobs:
 
       - name: Check Formatting (Prettier / Biome)
         continue-on-error: true
-        run: npx prettier --check . || npm run format:check
+        run: npx prettier --check . || npm run format-check
 
       - name: Run Linter (ESLint)
         run: npm run lint
