@@ -66,20 +66,20 @@ jobs:
           echo "Selected build mode: $MODE for language: ${{ inputs.language }}"
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: ${{ inputs.language }}
           build-mode: ${{ steps.build-mode.outputs.mode }}
       
       - name: Autobuild
         if: steps.build-mode.outputs.mode == 'autobuild'
-        uses: github/codeql-action/autobuild@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/autobuild@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
       
       - name: Manual Build
         if: steps.build-mode.outputs.mode == 'manual' && inputs.build-command != ''
         run: ${{ inputs.build-command }}
       
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:${{ inputs.language }}"
