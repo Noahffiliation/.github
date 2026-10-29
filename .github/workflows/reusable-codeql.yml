@@ -19,6 +19,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
   security-events: write
 
@@ -26,6 +27,10 @@ jobs:
   codeql:
     name: CodeQL Security Scan (${{ inputs.language }})
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     timeout-minutes: 25
     steps:
       - name: Checkout repository
@@ -80,6 +85,87 @@ jobs:
         run: ${{ inputs.build-command }}
       
       - name: Perform CodeQL Analysis
+        id: codeql-analyze
         uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: "/language:${{ inputs.language }}"
+          output: codeql-results
+          upload: ${{ github.event.repository.private && 'never' || 'always' }}
+          upload-database: ${{ !github.event.repository.private }}
+
+      - name: Upload CodeQL SARIF Artifact
+        if: always() && github.event.repository.private
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-sarif-${{ inputs.language }}
+          path: codeql-results/*.sarif
+          retention-days: 14
+
+      - name: Check CodeQL Results (Private Repository)
+        if: github.event.repository.private
+        env:
+          CODEQL_LANG: ${{ inputs.language }}
+        run: |
+          python3 - <<'PY'
+          import glob
+          import json
+          import os
+          import sys
+
+          sarif_files = sorted(glob.glob("codeql-results/*.sarif"))
+          if not sarif_files:
+              print("::error::No CodeQL SARIF output files found in codeql-results/.")
+              sys.exit(1)
+
+          findings = []
+          for path in sarif_files:
+              with open(path, encoding="utf-8") as fh:
+                  sarif = json.load(fh)
+              for run in sarif.get("runs", []):
+                  tool = run.get("tool", {})
+                  rule_objs = list(tool.get("driver", {}).get("rules", []))
+                  for ext in tool.get("extensions", []):
+                      rule_objs.extend(ext.get("rules", []))
+                  rule_levels = {
+                      r["id"]: r.get("defaultConfiguration", {}).get("level", "warning")
+                      for r in rule_objs
+                      if "id" in r
+                  }
+                  for res in run.get("results", []):
+                      suppressions = res.get("suppressions") or []
+                      if any(s.get("status") != "rejected" for s in suppressions):
+                          continue
+                      rule_id = res.get("ruleId", "unknown")
+                      level = res.get("level") or rule_levels.get(rule_id, "warning")
+                      if level == "none":
+                          continue
+                      locs = res.get("locations") or []
+                      phys = locs[0].get("physicalLocation", {}) if locs else {}
+                      uri = phys.get("artifactLocation", {}).get("uri", "unknown")
+                      line = phys.get("region", {}).get("startLine", 1)
+                      text = res.get("message", {}).get("text") or ""
+                      msg = (text.splitlines() or [""])[0]
+                      findings.append((level, rule_id, uri, line, msg))
+
+          lang = os.environ.get("CODEQL_LANG", "unknown")
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as sf:
+                  sf.write(f"## 🛡️ CodeQL Security Summary (`{lang}`)\n\n")
+                  sf.write(f"- **Alerts Found:** `{len(findings)}`\n")
+                  sf.write(f"- **SARIF Artifact:** `codeql-sarif-{lang}`\n\n")
+                  if findings:
+                      sf.write("| Level | Rule | Location | Message |\n| --- | --- | --- | --- |\n")
+                      for level, rule_id, uri, line, msg in findings:
+                          safe_msg = msg.replace("|", "\\|")
+                          sf.write(f"| `{level}` | `{rule_id}` | `{uri}:{line}` | {safe_msg} |\n")
+
+          if findings:
+              for level, rule_id, uri, line, msg in findings:
+                  cmd = "error" if level == "error" else "warning"
+                  print(f"::{cmd} file={uri},line={line},title=CodeQL ({rule_id})::{msg}")
+              print(f"CodeQL detected {len(findings)} alert(s).")
+              sys.exit(1)
+
+          print("CodeQL scan passed with 0 alerts.")
+          PY
