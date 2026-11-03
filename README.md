@@ -29,6 +29,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
   packages: write
   security-events: write
@@ -36,6 +37,7 @@ permissions:
 jobs:
   node-ci:
     permissions:
+      actions: read
       contents: read
       packages: write
       security-events: write
@@ -62,6 +64,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
   packages: write
   security-events: write
@@ -69,6 +72,7 @@ permissions:
 jobs:
   python-ci:
     permissions:
+      actions: read
       contents: read
       packages: write
       security-events: write
@@ -93,6 +97,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: read
   contents: read
   packages: write
   security-events: write
@@ -100,6 +105,7 @@ permissions:
 jobs:
   android-ci:
     permissions:
+      actions: read
       contents: read
       packages: write
       security-events: write
@@ -125,12 +131,14 @@ on:
     - cron: '17 3 * * *' # Daily at 03:17 UTC
 
 permissions:
+  actions: read
   contents: read
   security-events: write
 
 jobs:
   security-scan:
     permissions:
+      actions: read
       contents: read
       security-events: write
     uses: Noahffiliation/.github/.github/workflows/reusable-codeql.yml@main
